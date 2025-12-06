@@ -1,14 +1,28 @@
 # Orchester & Zuschauer Personenzähler
 
-Ein Python-Tool zur automatischen Zählung von Personen auf Fotos von Orchestern oder Zuschauerräumen unter Verwendung von YOLO (You Only Look Once).
+Ein Tool zur automatischen Zählung von Personen auf Fotos von Orchestern oder Zuschauerräumen unter Verwendung von KI-Objekterkennung.
+
+## Web-Version
+
+**[Jetzt im Browser testen](https://ccabos.github.io/personcount/)**
+
+Die Web-Version läuft komplett im Browser mit TensorFlow.js - keine Installation erforderlich!
 
 ## Features
 
+### Web-Version
+- Läuft komplett im Browser (keine Installation)
+- Drag & Drop Bildupload
+- Echtzeit-Personenerkennung mit TensorFlow.js
+- Demo-Bilder zum Testen
+
+### Python-Version
 - Zählung von Personen auf einzelnen Bildern oder in ganzen Verzeichnissen
 - Unterstützung verschiedener YOLO-Modelle (schnell bis hochpräzise)
 - Visualisierung mit Bounding-Boxes
 - Einstellbare Erkennungs-Konfidenz
 - Export annotierter Bilder
+- Batch-Verarbeitung ganzer Ordner
 
 ## Installation
 
