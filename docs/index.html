@@ -12,7 +12,7 @@
     <div class="container">
         <header>
             <h1>Orchester & Zuschauer Personenzähler</h1>
-            <p class="subtitle">KI-basierte Personenerkennung mit TensorFlow.js</p>
+            <p class="subtitle">KI-basierte Personenerkennung mit YOLO und TensorFlow.js</p>
         </header>
 
         <main>
@@ -35,19 +35,37 @@
                 <h2>Modell-Einstellungen</h2>
                 <div class="settings-grid">
                     <div class="setting-item">
+                        <label for="modeSelect">Erkennungsmodus:</label>
+                        <select id="modeSelect">
+                            <option value="browser" selected>Browser (COCO-SSD)</option>
+                            <option value="backend">Backend (YOLO)</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
                         <label for="modelSelect">KI-Modell:</label>
                         <select id="modelSelect">
-                            <option value="lite_mobilenet_v2">Lite MobileNet v2 (Schnell)</option>
-                            <option value="mobilenet_v1">MobileNet v1 (Ausgewogen)</option>
-                            <option value="mobilenet_v2" selected>MobileNet v2 (Genau)</option>
+                            <!-- Browser models (COCO-SSD) -->
+                            <option value="lite_mobilenet_v2" data-mode="browser">Lite MobileNet v2 (Schnell)</option>
+                            <option value="mobilenet_v1" data-mode="browser">MobileNet v1 (Ausgewogen)</option>
+                            <option value="mobilenet_v2" data-mode="browser" selected>MobileNet v2 (Genau)</option>
+                            <!-- Backend models (YOLO) -->
+                            <option value="yolov8n.pt" data-mode="backend">YOLOv8 Nano (Schnell)</option>
+                            <option value="yolov8s.pt" data-mode="backend">YOLOv8 Small (Ausgewogen)</option>
+                            <option value="yolov8m.pt" data-mode="backend">YOLOv8 Medium (Empfohlen)</option>
+                            <option value="yolov8l.pt" data-mode="backend">YOLOv8 Large (Genau)</option>
+                            <option value="yolov8x.pt" data-mode="backend">YOLOv8 XLarge (Maximal)</option>
                         </select>
                     </div>
                     <div class="setting-item">
                         <label for="confidenceSlider">Min. Konfidenz: <span id="confidenceValue">50%</span></label>
                         <input type="range" id="confidenceSlider" min="10" max="90" value="50">
                     </div>
+                    <div class="setting-item" id="backendUrlContainer" style="display: none;">
+                        <label for="backendUrl">Backend-URL:</label>
+                        <input type="text" id="backendUrl" value="http://localhost:5000" placeholder="http://localhost:5000">
+                    </div>
                 </div>
-                <p class="model-status" id="modelStatus">Modell: MobileNet v2 geladen</p>
+                <p class="model-status" id="modelStatus">Modus: Browser | Modell: MobileNet v2</p>
             </section>
 
             <section class="demo-section">
