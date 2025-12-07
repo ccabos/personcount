@@ -7,6 +7,15 @@ class PersonCounter {
     constructor() {
         this.model = null;
         this.isModelLoaded = false;
+        this.currentModelName = 'mobilenet_v2';
+        this.minConfidence = 0.5;
+
+        // Model display names
+        this.modelNames = {
+            'lite_mobilenet_v2': 'Lite MobileNet v2',
+            'mobilenet_v1': 'MobileNet v1',
+            'mobilenet_v2': 'MobileNet v2'
+        };
 
         // DOM Elements
         this.uploadArea = document.getElementById('uploadArea');
@@ -20,13 +29,20 @@ class PersonCounter {
         this.processingTime = document.getElementById('processingTime');
         this.avgConfidence = document.getElementById('avgConfidence');
         this.detectionList = document.getElementById('detectionList');
+        this.modelSelect = document.getElementById('modelSelect');
+        this.modelStatus = document.getElementById('modelStatus');
+        this.confidenceSlider = document.getElementById('confidenceSlider');
+        this.confidenceValue = document.getElementById('confidenceValue');
+
+        // Store last processed image for re-processing
+        this.lastImageSrc = null;
 
         this.init();
     }
 
     async init() {
         this.setupEventListeners();
-        await this.loadModel();
+        await this.loadModel(this.currentModelName);
     }
 
     setupEventListeners() {
@@ -57,18 +73,53 @@ class PersonCounter {
         document.querySelectorAll('.demo-btn').forEach(btn => {
             btn.addEventListener('click', () => this.loadDemoImage(btn.dataset.demo));
         });
+
+        // Model selection
+        this.modelSelect.addEventListener('change', async (e) => {
+            const newModel = e.target.value;
+            if (newModel !== this.currentModelName) {
+                await this.loadModel(newModel);
+                // Re-process last image if available
+                if (this.lastImageSrc) {
+                    this.processImage(this.lastImageSrc);
+                }
+            }
+        });
+
+        // Confidence slider
+        this.confidenceSlider.addEventListener('input', (e) => {
+            this.minConfidence = parseInt(e.target.value) / 100;
+            this.confidenceValue.textContent = `${e.target.value}%`;
+            // Re-process last image if available
+            if (this.lastImageSrc && this.isModelLoaded) {
+                this.processImage(this.lastImageSrc);
+            }
+        });
     }
 
-    async loadModel() {
-        this.showLoading('KI-Modell wird geladen...');
+    async loadModel(modelName) {
+        this.isModelLoaded = false;
+        this.modelStatus.textContent = `Lade ${this.modelNames[modelName]}...`;
+        this.modelStatus.className = 'model-status loading';
+        this.showLoading(`${this.modelNames[modelName]} wird geladen...`);
 
         try {
-            this.model = await cocoSsd.load();
+            // Dispose old model if exists
+            if (this.model) {
+                this.model = null;
+            }
+
+            this.model = await cocoSsd.load({ base: modelName });
+            this.currentModelName = modelName;
             this.isModelLoaded = true;
+            this.modelStatus.textContent = `Modell: ${this.modelNames[modelName]} geladen`;
+            this.modelStatus.className = 'model-status';
             this.hideLoading();
-            console.log('COCO-SSD Modell erfolgreich geladen');
+            console.log(`COCO-SSD ${modelName} erfolgreich geladen`);
         } catch (error) {
             console.error('Fehler beim Laden des Modells:', error);
+            this.modelStatus.textContent = 'Fehler beim Laden des Modells';
+            this.modelStatus.className = 'model-status error';
             this.loadingText.textContent = 'Fehler beim Laden des Modells. Bitte Seite neu laden.';
         }
     }
@@ -209,6 +260,9 @@ class PersonCounter {
             return;
         }
 
+        // Store for re-processing
+        this.lastImageSrc = imageSrc;
+
         this.showLoading('Personen werden erkannt...');
 
         // Load image
@@ -227,14 +281,16 @@ class PersonCounter {
             // Run detection
             const predictions = await this.model.detect(img);
 
-            // Filter for persons only
-            const persons = predictions.filter(p => p.class === 'person');
+            // Filter for persons only with minimum confidence
+            const persons = predictions.filter(
+                p => p.class === 'person' && p.score >= this.minConfidence
+            );
 
             const endTime = performance.now();
             const processingTimeMs = endTime - startTime;
 
-            // Draw results
-            this.drawDetections(ctx, persons);
+            // Draw results on canvas
+            this.drawDetections(ctx, persons, img.width, img.height);
 
             // Update UI
             this.updateResults(persons, processingTimeMs);
@@ -254,38 +310,145 @@ class PersonCounter {
         img.src = imageSrc;
     }
 
-    drawDetections(ctx, detections) {
+    drawDetections(ctx, detections, imgWidth, imgHeight) {
+        // Calculate scale factor for text based on image size
+        const scaleFactor = Math.max(imgWidth, imgHeight) / 800;
+        const fontSize = Math.max(14, Math.round(16 * scaleFactor));
+        const lineWidth = Math.max(2, Math.round(3 * scaleFactor));
+        const padding = Math.max(4, Math.round(5 * scaleFactor));
+
         detections.forEach((detection, index) => {
             const [x, y, width, height] = detection.bbox;
             const confidence = detection.score;
 
             // Determine color based on confidence
-            let color;
+            let color, bgColor;
             if (confidence >= 0.7) {
                 color = '#22c55e'; // Green
+                bgColor = 'rgba(34, 197, 94, 0.9)';
             } else if (confidence >= 0.5) {
                 color = '#f59e0b'; // Orange
+                bgColor = 'rgba(245, 158, 11, 0.9)';
             } else {
                 color = '#ef4444'; // Red
+                bgColor = 'rgba(239, 68, 68, 0.9)';
             }
 
-            // Draw bounding box
+            // Draw bounding box with thicker line
             ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
+            ctx.lineWidth = lineWidth;
             ctx.strokeRect(x, y, width, height);
 
-            // Draw label background
-            const label = `#${index + 1} ${(confidence * 100).toFixed(0)}%`;
-            ctx.font = 'bold 14px sans-serif';
-            const textWidth = ctx.measureText(label).width;
+            // Draw corner accents for better visibility
+            const cornerLength = Math.min(width, height) * 0.2;
+            ctx.lineWidth = lineWidth + 2;
 
-            ctx.fillStyle = color;
-            ctx.fillRect(x, y - 24, textWidth + 10, 24);
+            // Top-left corner
+            ctx.beginPath();
+            ctx.moveTo(x, y + cornerLength);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x + cornerLength, y);
+            ctx.stroke();
 
-            // Draw label text
+            // Top-right corner
+            ctx.beginPath();
+            ctx.moveTo(x + width - cornerLength, y);
+            ctx.lineTo(x + width, y);
+            ctx.lineTo(x + width, y + cornerLength);
+            ctx.stroke();
+
+            // Bottom-left corner
+            ctx.beginPath();
+            ctx.moveTo(x, y + height - cornerLength);
+            ctx.lineTo(x, y + height);
+            ctx.lineTo(x + cornerLength, y + height);
+            ctx.stroke();
+
+            // Bottom-right corner
+            ctx.beginPath();
+            ctx.moveTo(x + width - cornerLength, y + height);
+            ctx.lineTo(x + width, y + height);
+            ctx.lineTo(x + width, y + height - cornerLength);
+            ctx.stroke();
+
+            // Draw label with person number
+            const personNumber = index + 1;
+            const label = `#${personNumber}`;
+            const confLabel = `${(confidence * 100).toFixed(0)}%`;
+
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            const numberWidth = ctx.measureText(label).width;
+            const confWidth = ctx.measureText(confLabel).width;
+            const labelHeight = fontSize + padding * 2;
+
+            // Draw number badge at top-left
+            this.drawRoundedRect(ctx, x, y - labelHeight - 2, numberWidth + padding * 2, labelHeight, 4, bgColor);
+
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(label, x + 5, y - 7);
+            ctx.fillText(label, x + padding, y - padding - 4);
+
+            // Draw confidence badge at top-right of box
+            this.drawRoundedRect(ctx, x + width - confWidth - padding * 2, y - labelHeight - 2, confWidth + padding * 2, labelHeight, 4, bgColor);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(confLabel, x + width - confWidth - padding, y - padding - 4);
         });
+
+        // Draw total count overlay at top of image
+        this.drawTotalCountOverlay(ctx, detections.length, imgWidth, imgHeight, scaleFactor);
+    }
+
+    drawRoundedRect(ctx, x, y, width, height, radius, fillColor) {
+        ctx.fillStyle = fillColor;
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    drawTotalCountOverlay(ctx, count, imgWidth, imgHeight, scaleFactor) {
+        const fontSize = Math.max(24, Math.round(32 * scaleFactor));
+        const padding = Math.max(10, Math.round(15 * scaleFactor));
+
+        const text = `${count} Person${count !== 1 ? 'en' : ''} erkannt`;
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        const textWidth = ctx.measureText(text).width;
+
+        const boxWidth = textWidth + padding * 2;
+        const boxHeight = fontSize + padding * 2;
+        const boxX = (imgWidth - boxWidth) / 2;
+        const boxY = padding;
+
+        // Draw semi-transparent background with rounded corners
+        this.drawRoundedRect(ctx, boxX, boxY, boxWidth, boxHeight, 8, 'rgba(0, 0, 0, 0.75)');
+
+        // Draw border
+        ctx.strokeStyle = count > 0 ? '#22c55e' : '#94a3b8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(boxX + 8, boxY);
+        ctx.lineTo(boxX + boxWidth - 8, boxY);
+        ctx.quadraticCurveTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + 8);
+        ctx.lineTo(boxX + boxWidth, boxY + boxHeight - 8);
+        ctx.quadraticCurveTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - 8, boxY + boxHeight);
+        ctx.lineTo(boxX + 8, boxY + boxHeight);
+        ctx.quadraticCurveTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - 8);
+        ctx.lineTo(boxX, boxY + 8);
+        ctx.quadraticCurveTo(boxX, boxY, boxX + 8, boxY);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Draw text
+        ctx.fillStyle = count > 0 ? '#22c55e' : '#94a3b8';
+        ctx.fillText(text, boxX + padding, boxY + padding + fontSize * 0.75);
     }
 
     updateResults(detections, processingTimeMs) {

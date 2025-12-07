@@ -31,6 +31,25 @@
                 </div>
             </section>
 
+            <section class="settings-section">
+                <h2>Modell-Einstellungen</h2>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="modelSelect">KI-Modell:</label>
+                        <select id="modelSelect">
+                            <option value="lite_mobilenet_v2">Lite MobileNet v2 (Schnell)</option>
+                            <option value="mobilenet_v1">MobileNet v1 (Ausgewogen)</option>
+                            <option value="mobilenet_v2" selected>MobileNet v2 (Genau)</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label for="confidenceSlider">Min. Konfidenz: <span id="confidenceValue">50%</span></label>
+                        <input type="range" id="confidenceSlider" min="10" max="90" value="50">
+                    </div>
+                </div>
+                <p class="model-status" id="modelStatus">Modell: MobileNet v2 geladen</p>
+            </section>
+
             <section class="demo-section">
                 <h2>Beispielbilder testen</h2>
                 <div class="demo-buttons">
