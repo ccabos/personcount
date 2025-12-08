@@ -134,11 +134,7 @@ with gr.Blocks(title="Orchester Personenzähler", theme=gr.themes.Soft()) as dem
             )
 
             model_dropdown = gr.Dropdown(
-                choices=[
-                    ("YOLOv8 Nano (Schnell)", "yolov8n.pt"),
-                    ("YOLOv8 Small", "yolov8s.pt"),
-                    ("YOLOv8 Medium (Empfohlen)", "yolov8m.pt"),
-                ],
+                choices=["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"],
                 value="yolov8n.pt",
                 label="Modell"
             )
