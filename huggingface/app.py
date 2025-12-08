@@ -69,7 +69,7 @@ def count_persons(image, model_name, confidence):
         return None, f"Fehler: {str(e)}"
 
 
-# Interface with model choice
+# Interface with model choice (Gradio 3.x syntax)
 demo = gr.Interface(
     fn=count_persons,
     inputs=[
