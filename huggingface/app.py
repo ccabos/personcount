@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 from PIL import Image
 from ultralytics import YOLO
+import traceback
 
 # Global model cache
 models = {}
@@ -16,15 +17,13 @@ models = {}
 def get_model(model_name: str) -> YOLO:
     """Load and cache YOLO model."""
     if model_name not in models:
+        print(f"Loading model: {model_name}")
         models[model_name] = YOLO(model_name)
+        print(f"Model {model_name} loaded successfully")
     return models[model_name]
 
 
-def count_persons(
-    image: np.ndarray,
-    model_name: str = "yolov8n.pt",
-    confidence: float = 0.25
-) -> tuple[np.ndarray, str]:
+def count_persons(image, model_name="yolov8n.pt", confidence=0.25):
     """
     Detect and count persons in an image.
 
@@ -36,33 +35,36 @@ def count_persons(
     Returns:
         Tuple of (annotated image, result text)
     """
-    if image is None:
-        return None, "Bitte laden Sie ein Bild hoch."
+    try:
+        if image is None:
+            return None, "Bitte laden Sie ein Bild hoch."
 
-    # Load model
-    model = get_model(model_name)
+        print(f"Processing image with model {model_name}, confidence {confidence}")
 
-    # Run inference
-    results = model(image, conf=confidence, classes=[0], verbose=False)
-    result = results[0]
+        # Load model
+        model = get_model(model_name)
 
-    # Get detections
-    boxes = result.boxes
-    person_count = len(boxes)
+        # Run inference
+        results = model(image, conf=confidence, classes=[0], verbose=False)
+        result = results[0]
 
-    # Draw annotations
-    annotated = result.plot()
+        # Get detections
+        boxes = result.boxes
+        person_count = len(boxes)
 
-    # Add count overlay
-    annotated = draw_count_overlay(annotated, person_count)
+        # Draw annotations
+        annotated = result.plot()
 
-    # Build result text
-    if person_count == 0:
-        result_text = "Keine Personen erkannt."
-    else:
-        confidences = boxes.conf.cpu().numpy()
-        avg_conf = np.mean(confidences) * 100
-        result_text = f"""## Ergebnis
+        # Add count overlay
+        annotated = draw_count_overlay(annotated, person_count)
+
+        # Build result text
+        if person_count == 0:
+            result_text = "Keine Personen erkannt."
+        else:
+            confidences = boxes.conf.cpu().numpy()
+            avg_conf = np.mean(confidences) * 100
+            result_text = f"""## Ergebnis
 
 **{person_count} Person{"en" if person_count != 1 else ""} erkannt**
 
@@ -71,7 +73,12 @@ def count_persons(
 - Durchschnittliche Konfidenz: {avg_conf:.1f}%
 """
 
-    return annotated, result_text
+        return annotated, result_text
+
+    except Exception as e:
+        error_msg = f"Fehler: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return None, f"**Fehler bei der Verarbeitung:**\n```\n{str(e)}\n```"
 
 
 def draw_count_overlay(image: np.ndarray, count: int) -> np.ndarray:
@@ -131,8 +138,6 @@ with gr.Blocks(title="Orchester Personenzähler", theme=gr.themes.Soft()) as dem
                     ("YOLOv8 Nano (Schnell)", "yolov8n.pt"),
                     ("YOLOv8 Small", "yolov8s.pt"),
                     ("YOLOv8 Medium (Empfohlen)", "yolov8m.pt"),
-                    ("YOLOv8 Large", "yolov8l.pt"),
-                    ("YOLOv8 XLarge (Genau)", "yolov8x.pt"),
                 ],
                 value="yolov8n.pt",
                 label="Modell"
@@ -152,28 +157,12 @@ with gr.Blocks(title="Orchester Personenzähler", theme=gr.themes.Soft()) as dem
             output_image = gr.Image(label="Ergebnis")
             result_text = gr.Markdown()
 
-    # Examples
-    gr.Examples(
-        examples=[
-            ["https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=640", "yolov8n.pt", 0.25],
-        ],
-        inputs=[input_image, model_dropdown, confidence_slider],
-        outputs=[output_image, result_text],
-        fn=count_persons,
-        cache_examples=False
-    )
-
     # Event handlers
     detect_btn.click(
         fn=count_persons,
         inputs=[input_image, model_dropdown, confidence_slider],
-        outputs=[output_image, result_text]
-    )
-
-    input_image.change(
-        fn=count_persons,
-        inputs=[input_image, model_dropdown, confidence_slider],
-        outputs=[output_image, result_text]
+        outputs=[output_image, result_text],
+        api_name="detect"
     )
 
 # Launch
