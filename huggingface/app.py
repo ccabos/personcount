@@ -7,18 +7,30 @@ import numpy as np
 import cv2
 from ultralytics import YOLO
 
-# Load model once at startup
-print("Loading YOLO model...")
-model = YOLO("yolov8n.pt")
-print("Model loaded!")
+# Model cache
+models = {}
+
+def get_model(model_name):
+    """Load and cache YOLO model."""
+    if model_name not in models:
+        print(f"Loading model: {model_name}")
+        models[model_name] = YOLO(model_name)
+        print(f"Model {model_name} loaded!")
+    return models[model_name]
+
+# Pre-load default model
+get_model("yolov8n.pt")
 
 
-def count_persons(image, confidence):
+def count_persons(image, model_name, confidence):
     """Detect and count persons in an image."""
     if image is None:
         return None, "Bitte laden Sie ein Bild hoch."
 
     try:
+        # Load model
+        model = get_model(model_name)
+
         # Run inference
         results = model(image, conf=confidence, classes=[0], verbose=False)
         result = results[0]
@@ -49,7 +61,7 @@ def count_persons(image, confidence):
             result_text = "Keine Personen erkannt."
         else:
             avg_conf = np.mean(boxes.conf.cpu().numpy()) * 100
-            result_text = f"{person_count} Personen erkannt (Konfidenz: {avg_conf:.1f}%)"
+            result_text = f"{person_count} Personen erkannt\nModell: {model_name}\nKonfidenz: {avg_conf:.1f}%"
 
         return annotated, result_text
 
@@ -57,11 +69,16 @@ def count_persons(image, confidence):
         return None, f"Fehler: {str(e)}"
 
 
-# Simple Interface
+# Interface with model choice
 demo = gr.Interface(
     fn=count_persons,
     inputs=[
         gr.Image(label="Bild hochladen", type="numpy"),
+        gr.Dropdown(
+            choices=["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"],
+            value="yolov8n.pt",
+            label="Modell (n=schnell, m=genau)"
+        ),
         gr.Slider(minimum=0.1, maximum=0.9, value=0.25, step=0.05, label="Konfidenz")
     ],
     outputs=[
