@@ -4,6 +4,9 @@ Orchester & Zuschauer Personenzähler
 ====================================
 Ein Tool zur Zählung von Personen auf Fotos von Orchestern oder Zuschauerräumen
 unter Verwendung von YOLO (You Only Look Once) für die Objekterkennung.
+
+Optional: SAHI (Slicing Aided Hyper Inference) für die zuverlässige Erkennung
+vieler kleiner Personen auf hochauflösenden Bildern.
 """
 
 import argparse
@@ -23,18 +26,142 @@ class PersonCounter:
     # COCO-Klassen-ID für "person"
     PERSON_CLASS_ID = 0
 
-    def __init__(self, model_name: str = "yolov8n.pt", confidence: float = 0.25):
+    def __init__(
+        self,
+        model_name: str = "yolov8n.pt",
+        confidence: float = 0.25,
+        use_sahi: bool = False,
+        slice_height: int = 640,
+        slice_width: int = 640,
+        overlap_height_ratio: float = 0.2,
+        overlap_width_ratio: float = 0.2,
+        device: Optional[str] = None,
+    ):
         """
         Initialisiert den PersonCounter.
 
         Args:
             model_name: Name des YOLO-Modells (z.B. yolov8n.pt, yolov8s.pt, yolov8m.pt)
             confidence: Mindest-Konfidenz für die Erkennung (0.0 - 1.0)
+            use_sahi: Wenn True, wird SAHI (sliced inference) für die Erkennung
+                kleiner Personen auf großen Bildern verwendet.
+            slice_height: Höhe der SAHI-Kacheln in Pixeln (nur bei use_sahi=True).
+            slice_width: Breite der SAHI-Kacheln in Pixeln (nur bei use_sahi=True).
+            overlap_height_ratio: Überlappung der Kacheln in Höhe (0.0-1.0).
+            overlap_width_ratio: Überlappung der Kacheln in Breite (0.0-1.0).
+            device: Gerät für die Inferenz ("cpu" / "cuda" / "mps"). None = auto.
         """
+        self.model_name = model_name
         self.confidence = confidence
+        self.use_sahi = use_sahi
+        self.slice_height = slice_height
+        self.slice_width = slice_width
+        self.overlap_height_ratio = overlap_height_ratio
+        self.overlap_width_ratio = overlap_width_ratio
+        self.device = device
+
         print(f"Lade YOLO-Modell: {model_name}...")
         self.model = YOLO(model_name)
         print("Modell erfolgreich geladen.")
+
+        self.sahi_model = None
+        if self.use_sahi:
+            self.sahi_model = self._load_sahi_model()
+
+    def _load_sahi_model(self):
+        """Lädt das SAHI-Detektor-Wrapper für das YOLO-Modell."""
+        try:
+            from sahi import AutoDetectionModel
+        except ImportError as exc:
+            raise ImportError(
+                "SAHI ist nicht installiert. Bitte installieren mit: "
+                "pip install sahi"
+            ) from exc
+
+        # SAHI unterstützt sowohl 'ultralytics' (neuere Versionen) als auch
+        # 'yolov8' (ältere Versionen) als Modelltyp.
+        model_type_candidates = ("ultralytics", "yolov8")
+        last_error: Optional[Exception] = None
+        for model_type in model_type_candidates:
+            try:
+                print(f"Lade SAHI-Modell ({model_type}): {self.model_name}...")
+                detection_model = AutoDetectionModel.from_pretrained(
+                    model_type=model_type,
+                    model_path=self.model_name,
+                    confidence_threshold=self.confidence,
+                    device=self.device,
+                )
+                print("SAHI-Modell erfolgreich geladen.")
+                return detection_model
+            except Exception as exc:  # pragma: no cover - depends on sahi version
+                last_error = exc
+                continue
+
+        raise RuntimeError(
+            f"Konnte SAHI-Detektor nicht initialisieren: {last_error}"
+        )
+
+    def _predict_sahi(self, image_path: str):
+        """
+        Führt SAHI-basierte sliced inference durch und liefert (confidences, bboxes).
+        """
+        from sahi.predict import get_sliced_prediction
+
+        prediction = get_sliced_prediction(
+            image_path,
+            self.sahi_model,
+            slice_height=self.slice_height,
+            slice_width=self.slice_width,
+            overlap_height_ratio=self.overlap_height_ratio,
+            overlap_width_ratio=self.overlap_width_ratio,
+            verbose=0,
+        )
+
+        confidences: list = []
+        bboxes: list = []
+        for obj in prediction.object_prediction_list:
+            if obj.category.id != self.PERSON_CLASS_ID:
+                continue
+            bbox = obj.bbox.to_xyxy()
+            confidences.append(float(obj.score.value))
+            bboxes.append([float(c) for c in bbox])
+
+        return confidences, bboxes
+
+    def _draw_detections(
+        self,
+        image: np.ndarray,
+        bboxes: list,
+        confidences: list,
+    ) -> np.ndarray:
+        """Zeichnet Bounding-Boxes mit Konfidenzwerten auf ein Bild."""
+        annotated = image.copy()
+        color = (0, 255, 0)
+        for bbox, conf in zip(bboxes, confidences):
+            x1, y1, x2, y2 = (int(v) for v in bbox)
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+            label = f"person {conf:.2f}"
+            (tw, th), _ = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+            )
+            cv2.rectangle(
+                annotated,
+                (x1, max(0, y1 - th - 4)),
+                (x1 + tw + 4, y1),
+                color,
+                -1,
+            )
+            cv2.putText(
+                annotated,
+                label,
+                (x1 + 2, max(th, y1 - 2)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 0),
+                1,
+                cv2.LINE_AA,
+            )
+        return annotated
 
     def count_persons(self, image_path: str, save_output: bool = False) -> dict:
         """
@@ -51,39 +178,53 @@ class PersonCounter:
         if not image_path.exists():
             raise FileNotFoundError(f"Bild nicht gefunden: {image_path}")
 
-        # YOLO-Inferenz durchführen
-        results = self.model(
-            str(image_path),
-            conf=self.confidence,
-            classes=[self.PERSON_CLASS_ID],  # Nur Personen erkennen
-            verbose=False
-        )
+        if self.use_sahi:
+            confidences, bboxes = self._predict_sahi(str(image_path))
+            person_count = len(bboxes)
 
-        result = results[0]
-        boxes = result.boxes
+            output_path = None
+            if save_output:
+                image = cv2.imread(str(image_path))
+                annotated_frame = self._draw_detections(
+                    image, bboxes, confidences
+                )
+                output_path = (
+                    image_path.parent
+                    / f"{image_path.stem}_counted{image_path.suffix}"
+                )
+                cv2.imwrite(str(output_path), annotated_frame)
+        else:
+            # YOLO-Inferenz durchführen
+            results = self.model(
+                str(image_path),
+                conf=self.confidence,
+                classes=[self.PERSON_CLASS_ID],  # Nur Personen erkennen
+                verbose=False
+            )
 
-        # Personen zählen
-        person_count = len(boxes)
+            result = results[0]
+            boxes = result.boxes
 
-        # Konfidenzwerte extrahieren
-        confidences = boxes.conf.cpu().numpy().tolist() if len(boxes) > 0 else []
+            # Personen zählen
+            person_count = len(boxes)
 
-        # Bounding-Box-Koordinaten extrahieren
-        bboxes = boxes.xyxy.cpu().numpy().tolist() if len(boxes) > 0 else []
+            # Konfidenzwerte und Bounding-Boxen extrahieren
+            confidences = boxes.conf.cpu().numpy().tolist() if len(boxes) > 0 else []
+            bboxes = boxes.xyxy.cpu().numpy().tolist() if len(boxes) > 0 else []
 
-        output_path = None
-        if save_output:
-            # Annotiertes Bild speichern
-            output_path = image_path.parent / f"{image_path.stem}_counted{image_path.suffix}"
-            annotated_frame = result.plot()
-            cv2.imwrite(str(output_path), annotated_frame)
+            output_path = None
+            if save_output:
+                output_path = image_path.parent / f"{image_path.stem}_counted{image_path.suffix}"
+                annotated_frame = result.plot()
+                cv2.imwrite(str(output_path), annotated_frame)
 
         return {
             "image_path": str(image_path),
             "person_count": person_count,
             "confidences": confidences,
             "bounding_boxes": bboxes,
-            "output_path": str(output_path) if output_path else None
+            "output_path": str(output_path) if output_path else None,
+            "used_sahi": self.use_sahi,
         }
 
     def count_persons_in_directory(
@@ -147,18 +288,24 @@ class PersonCounter:
         Returns:
             Annotiertes Bild als numpy-Array
         """
-        results = self.model(
-            image_path,
-            conf=self.confidence,
-            classes=[self.PERSON_CLASS_ID],
-            verbose=False
-        )
+        if self.use_sahi:
+            confidences, bboxes = self._predict_sahi(image_path)
+            image = cv2.imread(image_path)
+            annotated_frame = self._draw_detections(image, bboxes, confidences)
+            person_count = len(bboxes)
+        else:
+            results = self.model(
+                image_path,
+                conf=self.confidence,
+                classes=[self.PERSON_CLASS_ID],
+                verbose=False
+            )
 
-        result = results[0]
-        annotated_frame = result.plot()
+            result = results[0]
+            annotated_frame = result.plot()
+            person_count = len(result.boxes)
 
         if show_count:
-            person_count = len(result.boxes)
             # Zähler-Text hinzufügen
             text = f"Personen: {person_count}"
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -233,6 +380,7 @@ Beispiele:
   python person_counter.py konzert.png --save
   python person_counter.py ./bilder/ --model yolov8m.pt --confidence 0.3
   python person_counter.py orchester.jpg --save --output ergebnis.jpg
+  python person_counter.py grosses_orchester.jpg --sahi --save
         """
     )
 
@@ -265,11 +413,37 @@ Beispiele:
         action="store_true",
         help="Weniger Ausgaben"
     )
+    parser.add_argument(
+        "--sahi",
+        action="store_true",
+        help="SAHI (sliced inference) aktivieren für bessere Erkennung "
+             "kleiner Personen auf großen Bildern"
+    )
+    parser.add_argument(
+        "--slice-size",
+        type=int,
+        default=640,
+        help="Kachelgröße für SAHI in Pixeln (Standard: 640)"
+    )
+    parser.add_argument(
+        "--slice-overlap",
+        type=float,
+        default=0.2,
+        help="Überlappung der SAHI-Kacheln (0.0-1.0, Standard: 0.2)"
+    )
 
     args = parser.parse_args()
 
     # PersonCounter initialisieren
-    counter = PersonCounter(model_name=args.model, confidence=args.confidence)
+    counter = PersonCounter(
+        model_name=args.model,
+        confidence=args.confidence,
+        use_sahi=args.sahi,
+        slice_height=args.slice_size,
+        slice_width=args.slice_size,
+        overlap_height_ratio=args.slice_overlap,
+        overlap_width_ratio=args.slice_overlap,
+    )
 
     input_path = Path(args.input)
 
@@ -284,6 +458,8 @@ Beispiele:
         print(f"\n{'=' * 40}")
         print(f"Bild: {result['image_path']}")
         print(f"Erkannte Personen: {result['person_count']}")
+        if result.get('used_sahi'):
+            print("Modus: SAHI (sliced inference)")
 
         if result['confidences'] and not args.quiet:
             avg_conf = sum(result['confidences']) / len(result['confidences'])

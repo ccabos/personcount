@@ -30,11 +30,28 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
 _model_cache = {}
 
 
-def get_model(model_name: str = "yolov8n.pt", confidence: float = 0.25) -> PersonCounter:
+def get_model(
+    model_name: str = "yolov8n.pt",
+    confidence: float = 0.25,
+    use_sahi: bool = False,
+    slice_size: int = 640,
+    slice_overlap: float = 0.2,
+) -> PersonCounter:
     """Get or create a cached PersonCounter instance."""
-    cache_key = f"{model_name}_{confidence}"
+    cache_key = (
+        f"{model_name}_{confidence}_sahi={use_sahi}"
+        f"_slice={slice_size}_overlap={slice_overlap}"
+    )
     if cache_key not in _model_cache:
-        _model_cache[cache_key] = PersonCounter(model_name=model_name, confidence=confidence)
+        _model_cache[cache_key] = PersonCounter(
+            model_name=model_name,
+            confidence=confidence,
+            use_sahi=use_sahi,
+            slice_height=slice_size,
+            slice_width=slice_size,
+            overlap_height_ratio=slice_overlap,
+            overlap_width_ratio=slice_overlap,
+        )
     return _model_cache[cache_key]
 
 
@@ -96,11 +113,17 @@ def detect_persons():
         - model: YOLO model name (default: yolov8n.pt)
         - confidence: minimum confidence threshold (default: 0.25)
         - annotate: whether to return annotated image (default: true)
+        - sahi: enable SAHI sliced inference for large images (default: false)
+        - slice_size: tile size for SAHI in pixels (default: 640)
+        - slice_overlap: tile overlap ratio for SAHI (default: 0.2)
     """
     # Get parameters
     model_name = request.args.get('model', 'yolov8n.pt')
     confidence = float(request.args.get('confidence', 0.25))
     annotate = request.args.get('annotate', 'true').lower() == 'true'
+    use_sahi = request.args.get('sahi', 'false').lower() == 'true'
+    slice_size = int(request.args.get('slice_size', 640))
+    slice_overlap = float(request.args.get('slice_overlap', 0.2))
 
     # Validate model name
     valid_models = ['yolov8n.pt', 'yolov8s.pt', 'yolov8m.pt', 'yolov8l.pt', 'yolov8x.pt']
@@ -142,7 +165,9 @@ def detect_persons():
             return jsonify({'error': 'Invalid content type. Use multipart/form-data or application/json'}), 400
 
         # Get model and run detection
-        counter = get_model(model_name, confidence)
+        counter = get_model(
+            model_name, confidence, use_sahi, slice_size, slice_overlap
+        )
         result = counter.count_persons(temp_path, save_output=False)
 
         # Build response
@@ -158,7 +183,12 @@ def detect_persons():
                 for i, (conf, bbox) in enumerate(zip(result['confidences'], result['bounding_boxes']))
             ],
             'model': model_name,
-            'confidence_threshold': confidence
+            'confidence_threshold': confidence,
+            'sahi': {
+                'enabled': use_sahi,
+                'slice_size': slice_size,
+                'slice_overlap': slice_overlap,
+            } if use_sahi else {'enabled': False},
         }
 
         # Add annotated image if requested
@@ -195,6 +225,9 @@ def detect_from_url():
 
     model_name = data.get('model', 'yolov8n.pt')
     confidence = float(data.get('confidence', 0.25))
+    use_sahi = bool(data.get('sahi', False))
+    slice_size = int(data.get('slice_size', 640))
+    slice_overlap = float(data.get('slice_overlap', 0.2))
 
     temp_path = None
     try:
@@ -204,7 +237,9 @@ def detect_from_url():
             temp_path = tmp.name
 
         # Run detection
-        counter = get_model(model_name, confidence)
+        counter = get_model(
+            model_name, confidence, use_sahi, slice_size, slice_overlap
+        )
         result = counter.count_persons(temp_path, save_output=False)
 
         # Get annotated image
@@ -222,6 +257,11 @@ def detect_from_url():
                 for i, (conf, bbox) in enumerate(zip(result['confidences'], result['bounding_boxes']))
             ],
             'model': model_name,
+            'sahi': {
+                'enabled': use_sahi,
+                'slice_size': slice_size,
+                'slice_overlap': slice_overlap,
+            } if use_sahi else {'enabled': False},
             'annotated_image': 'data:image/jpeg;base64,' + image_to_base64(annotated)
         })
 
