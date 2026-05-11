@@ -19,6 +19,8 @@ Die Web-Version läuft komplett im Browser mit TensorFlow.js - keine Installatio
 ### Python-Version
 - Zählung von Personen auf einzelnen Bildern oder in ganzen Verzeichnissen
 - Unterstützung verschiedener YOLO-Modelle (schnell bis hochpräzise)
+- **SAHI (Slicing Aided Hyper Inference)** für die zuverlässige Erkennung
+  vieler kleiner Personen auf hochauflösenden Orchester- oder Publikumsfotos
 - Visualisierung mit Bounding-Boxes
 - Einstellbare Erkennungs-Konfidenz
 - Export annotierter Bilder
@@ -59,6 +61,12 @@ python person_counter.py publikum.jpg --model yolov8m.pt
 
 # Mit angepasster Konfidenz
 python person_counter.py foto.jpg --confidence 0.4 --save
+
+# SAHI für große Bilder mit vielen kleinen Personen (z.B. ganzes Orchester)
+python person_counter.py grosses_orchester.jpg --sahi --save
+
+# SAHI mit angepasster Kachelgröße und Überlappung
+python person_counter.py konzertsaal.jpg --sahi --slice-size 512 --slice-overlap 0.3
 ```
 
 ### Als Python-Modul
@@ -78,6 +86,19 @@ results = counter.count_persons_in_directory("./bilder/", save_output=True)
 
 # Visualisierung erstellen
 counter.visualize_result("konzert.jpg", output_path="ergebnis.jpg")
+
+# SAHI für große Bilder mit vielen kleinen Personen
+sahi_counter = PersonCounter(
+    model_name="yolov8m.pt",
+    confidence=0.25,
+    use_sahi=True,
+    slice_height=640,
+    slice_width=640,
+    overlap_height_ratio=0.2,
+    overlap_width_ratio=0.2,
+)
+result = sahi_counter.count_persons("grosses_orchester.jpg", save_output=True)
+print(f"Erkannte Personen (SAHI): {result['person_count']}")
 ```
 
 ## YOLO-Modelle
@@ -99,6 +120,9 @@ counter.visualize_result("konzert.jpg", output_path="ergebnis.jpg")
 | `--save` | `-s` | False | Annotiertes Bild speichern |
 | `--output` | `-o` | - | Ausgabepfad für Bild |
 | `--quiet` | `-q` | False | Weniger Ausgaben |
+| `--sahi` | - | False | SAHI sliced inference aktivieren |
+| `--slice-size` | - | 640 | SAHI-Kachelgröße in Pixeln |
+| `--slice-overlap` | - | 0.2 | SAHI-Kachelüberlappung (0.0-1.0) |
 
 ## Tipps für Orchesterfotos
 
@@ -106,6 +130,24 @@ counter.visualize_result("konzert.jpg", output_path="ergebnis.jpg")
 2. **Gute Beleuchtung**: Gut beleuchtete Szenen werden besser erkannt
 3. **Modellwahl**: Für große Orchester mit vielen Personen empfiehlt sich `yolov8m.pt` oder größer
 4. **Konfidenz anpassen**: Bei Übererkennung Konfidenz erhöhen (z.B. 0.4), bei Untererkennung senken (z.B. 0.2)
+5. **SAHI aktivieren**: Bei großen Bildern (>2000px) mit vielen kleinen Personen
+   liefert `--sahi` deutlich bessere Ergebnisse, da das Bild in überlappende
+   Kacheln zerlegt und einzeln analysiert wird. Standardmäßig 640×640 Kacheln
+   mit 20% Überlappung. Die Verarbeitung ist langsamer, aber wesentlich
+   genauer für entfernte Musiker oder Zuschauer.
+
+### Wann SAHI verwenden?
+
+SAHI (Slicing Aided Hyper Inference) ist besonders sinnvoll, wenn:
+- Das Bild groß ist (z.B. 3000×2000 Pixel oder mehr)
+- Viele Personen klein im Bild erscheinen (Weitwinkelaufnahmen von Bühnen,
+  Konzertsälen, Zuschauerrängen)
+- Standard-YOLO offensichtlich Personen übersieht
+
+Beispiel-Aufruf:
+```bash
+python person_counter.py orchester_4k.jpg --sahi --model yolov8m.pt --save
+```
 
 ## Beispiel-Ausgabe
 
