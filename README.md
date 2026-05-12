@@ -182,6 +182,22 @@ Empfehlungen für Hugging Face:
 - **Timeout**: Sehr große Bilder mit SAHI können die Gradio-Default-Timeouts
   überschreiten. Notfalls Bild vorher auf ~3000 px Breite verkleinern.
 
+### Updates zum Space pushen
+
+Sobald der Space existiert, neue Versionen von `huggingface/app.py`,
+`huggingface/requirements.txt` und `huggingface/README.md` über die
+**Files**-Ansicht des Space hochladen:
+
+1. Den Space im Browser öffnen
+   (z.B. <https://huggingface.co/spaces/Ccab/orchcount>).
+2. Tab **Files** → Button **Add file** → **Upload files**.
+3. Die drei Dateien aus `huggingface/` per Drag & Drop ablegen.
+4. Commit-Nachricht eingeben (z.B. `Update SAHI pipeline`) und bestätigen.
+
+Nach dem Commit baut der Space automatisch neu (~2–5 min, weil `sahi` und
+`ultralytics` nachgezogen werden). Den Fortschritt unter dem **Logs**-Tab
+des Space verfolgen. Falls der Build fehlschlägt, steht dort der Grund.
+
 ## Beispiel-Ausgabe
 
 ```
