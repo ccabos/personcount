@@ -182,6 +182,70 @@ Empfehlungen für Hugging Face:
 - **Timeout**: Sehr große Bilder mit SAHI können die Gradio-Default-Timeouts
   überschreiten. Notfalls Bild vorher auf ~3000 px Breite verkleinern.
 
+### Updates zum Space pushen
+
+Sobald der Space existiert, gibt es drei Wege, neue Versionen von
+`huggingface/app.py`, `huggingface/requirements.txt` und
+`huggingface/README.md` hochzuladen.
+
+**Vorbereitung (einmalig):**
+
+1. Auf <https://huggingface.co/settings/tokens> einen **Write**-Token erstellen.
+2. `pip install -U huggingface_hub` lokal installieren.
+
+**Option A – Python-API (empfohlen, ein Befehl):**
+
+```bash
+export HF_TOKEN=hf_xxx   # frisch erstelltes Write-Token
+
+python - <<'PY'
+import os
+from huggingface_hub import HfApi
+
+api = HfApi(token=os.environ["HF_TOKEN"])
+print("whoami:", api.whoami()["name"])
+
+api.upload_folder(
+    repo_id="<user>/<space-name>",          # z.B. "Ccab/orchcount"
+    repo_type="space",
+    folder_path="huggingface",              # Ordner in diesem Repo
+    path_in_repo=".",                       # ins Space-Root hochladen
+    commit_message="Update SAHI pipeline",
+    allow_patterns=["app.py", "requirements.txt", "README.md"],
+)
+print("Done.")
+PY
+```
+
+**Option B – Hugging Face CLI:**
+
+```bash
+huggingface-cli login                       # Token einmalig speichern
+huggingface-cli upload <user>/<space-name> huggingface . \
+    --repo-type space \
+    --include "app.py" "requirements.txt" "README.md" \
+    --commit-message "Update SAHI pipeline"
+```
+
+**Option C – Git (gut für viele Iterationen):**
+
+```bash
+git clone https://huggingface.co/spaces/<user>/<space-name> hf-space
+cd hf-space
+cp ../personcount/huggingface/{app.py,requirements.txt,README.md} .
+git add app.py requirements.txt README.md
+git commit -m "Update SAHI pipeline"
+git push                                    # Token als Passwort eingeben
+```
+
+Nach dem Push baut der Space automatisch neu (~2–5 min, weil `sahi` und
+`ultralytics` nachgezogen werden). Den Fortschritt unter dem **Logs**-Tab
+des Space verfolgen. Falls der Build fehlschlägt, dort steht der Grund.
+
+> **Sicherheit**: Tokens nicht in das Repo committen. Nach versehentlicher
+> Veröffentlichung sofort unter
+> <https://huggingface.co/settings/tokens> widerrufen.
+
 ## Beispiel-Ausgabe
 
 ```
