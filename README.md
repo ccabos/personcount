@@ -149,6 +149,39 @@ Beispiel-Aufruf:
 python person_counter.py orchester_4k.jpg --sahi --model yolov8m.pt --save
 ```
 
+## SAHI auf Hugging Face Spaces
+
+Der Space unter `huggingface/` enthält ebenfalls einen **SAHI-Schalter** in
+der Gradio-Oberfläche. Auf einem öffentlichen Hugging Face Space deployen:
+
+1. **Space anlegen** auf <https://huggingface.co/new-space>
+   - SDK: **Gradio**
+   - Hardware: CPU reicht aus, GPU beschleunigt SAHI deutlich
+2. **Dateien hochladen** aus dem `huggingface/`-Ordner dieses Repos:
+   - `app.py` (enthält den SAHI-Schalter samt Kachelgrößen-Slidern)
+   - `requirements.txt` (enthält bereits `sahi>=0.11.18`)
+   - `README.md` (Space-Metadaten)
+3. **Build abwarten** – der erste Build dauert länger, weil `sahi` und
+   `ultralytics` nachgeladen werden.
+4. **Im Space** das Bild hochladen, das gewünschte YOLO-Modell wählen, dann
+   **"SAHI aktivieren"** anhaken. Mit den Slidern lassen sich Kachelgröße
+   (Standard 640 px) und Überlappung (Standard 20%) anpassen.
+
+Empfehlungen für Hugging Face:
+
+- **Hardware**: SAHI ist auf CPU rechenintensiv. Bei großen Bildern oder
+  vielen Aufrufen auf eine GPU-Instanz upgraden (`T4 small` reicht meist).
+- **Modellwahl**: Auf der gratis CPU-Stufe `yolov8n.pt` mit SAHI verwenden;
+  mit GPU eher `yolov8m.pt` oder `yolov8l.pt`.
+- **Kachelgröße**: 640 px ist der Standard. Bei sehr großen Bildern (z.B.
+  6000 px breit) erhöht 768–1024 px die Geschwindigkeit ohne große
+  Genauigkeitsverluste.
+- **Überlappung**: 20% ist ein guter Kompromiss. Wenn Personen an
+  Kachelrändern doppelt gezählt werden, Überlappung leicht reduzieren;
+  wenn sie an Kachelrändern verloren gehen, erhöhen (max. ~0.4).
+- **Timeout**: Sehr große Bilder mit SAHI können die Gradio-Default-Timeouts
+  überschreiten. Notfalls Bild vorher auf ~3000 px Breite verkleinern.
+
 ## Beispiel-Ausgabe
 
 ```
