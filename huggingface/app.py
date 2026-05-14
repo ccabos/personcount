@@ -166,7 +166,7 @@ demo = gr.Interface(
         "Für hochauflösende Bilder mit vielen kleinen Personen "
         "(z.B. ganzes Orchester oder Zuschauerraum) **SAHI aktivieren**."
     ),
-    allow_flagging="never"
+    flagging_mode="never"
 )
 
 if __name__ == "__main__":
